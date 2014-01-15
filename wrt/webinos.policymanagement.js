@@ -16,17 +16,24 @@
  ******************************************************************************/
 (function() {
 
-    PolicyManagementModule = function (obj) {
-        this.base = WebinosService;
-        this.base(obj);
-    };
+	PolicyManagementModule = function(obj) {
+		WebinosService.call(this, obj);
+	};
+	
+	// Inherit all functions from WebinosService
+	PolicyManagementModule.prototype = Object.create(WebinosService.prototype);	
+	// The following allows the 'instanceof' to work properly
+	PolicyManagementModule.prototype.constructor = PolicyManagementModule;
+	// Register to the service discovery
+	_webinos.registerServiceConstructor("http://webinos.org/core/policymanagement", PolicyManagementModule);
 
-    PolicyManagementModule.prototype = new WebinosService;
 
     PolicyManagementModule.prototype.bindService = function (bindCB, serviceId) {
         this.policy = policy;
         this.policyset = policyset;
         this.getPolicySet = getPolicySet;
+        this.testPolicy = testPolicy;
+        this.testNewPolicy = testNewPolicy;
         this.save = save;
 
         if (typeof bindCB.onBind === 'function') {
@@ -34,9 +41,9 @@
         };
     }
 
-    
-        var policy = function(ps, id, combine, description){
-        
+
+    var policy = function(ps, id, combine, description){
+
         var _ps = ps;
         if(ps)
             _ps = ps;
@@ -96,7 +103,7 @@
                         if(rule.condition){
                             //check first child
                             var parent = rule["condition"];
-                            
+
                             var tmp = parent[0];
                             console.log(JSON.stringify(rule["condition"]));
                             if(tmp['$']["id"] == value['$']["id"]){
@@ -145,10 +152,10 @@
                 }
 
                 else{
-                    
+
                     //check first child
                     var parent = rule["condition"];
-                    
+
                     var tmp = parent[0];
 
                     if(tmp['$']["id"] == updatedCondition['$']["id"]){
@@ -203,11 +210,11 @@
                     policy["rule"].length;
                 if(!rulePosition && policy["rule"])
                     position = policy["rule"].length;
-                
+
                 console.log("position : "+position);
                 if(!policy["rule"])
                     policy["rule"] = [rule];
-                else    
+                else
                     policy["rule"].splice(position, 0, rule);
             }
 
@@ -256,16 +263,17 @@
                 if(index != -1){
                     console.log("Removing rule " + index);
                     policy["rule"].splice(index,1);
+                    if(count == 1)
+                        policy["rule"] = undefined;
                 }
-                if(count == 1)
-                    policy["rule"] = undefined;    
-                
+
+
             }
             else
                 console.log("No rules");
         };
 
-        this.addSubject = function(newSubjectId, matches, policyId){
+        this.addSubject = function(newSubjectId, matches){
             if(!_ps) {
                 return null;
             }
@@ -276,10 +284,10 @@
             if(policy == null) {
                 return null;
             }
-           
+
             var id = (newSubjectId) ? newSubjectId : new Date().getTime();
             var newsubj = {"$" : {"id" : id} , "subject-match" : [] };
-        
+
             for(var i in matches){
                 if(i == "subject-match")
                     newsubj["subject-match"].push(matches[i]);
@@ -296,12 +304,12 @@
                         console.log("A subject with " + newSubjectId + " is already present");
                         return;
                     }
-                } 
+                }
             policy.target[0]["subject"].push(newsubj);
             //console.log(JSON.stringify(policy.target[0]));
 
         };
-
+/*
         this.getSubjects = function(policyId){
             if(!_ps) {
                 return null;
@@ -315,7 +323,7 @@
             var subjects = policy.target[0]["subject"];
 
             return subjects;
-        };
+        };*/
 
         this.removeSubject = function(subjectId) {
             if(!_ps) {
@@ -328,7 +336,7 @@
 
             //var policy = (policyId) ? getPolicyById(_ps, policyId) : _ps;
             var policy = _ps;
-            
+
             //console.log(policy);
 
             var count = 0;
@@ -374,21 +382,25 @@
             }
         };
 
-        this.updateAttributes = function(policyId, combine, description){
-            if(policyId)
-                _ps['$']["id"] = policyId;
-            if(combine)
-                _ps['$']["combine"] = combine;
-            if(description)
-                _ps['$']["description"] = description;
+        this.updateAttribute = function(key, value){
+            if (!key) {
+                return;
+            }
+            if (key == "combine") {
+                _ps['$']["combine"] = value;
+            }
+            else if (key == "description") {
+                _ps['$']["description"] = value;
+            }
+
         };
 
-        this.toJSONString = function(){
-            return JSON.stringify(_ps);
+        this.toJSONObject = function(){
+            return _ps;
         };
     };
 
-    var policyset = function(ps ,type, basefile, fileId, id, combine, description){
+    var policyset = function(ps ,type, basefile, fileId, id, combine, description) {
         var _type = type;
         var _basefile = basefile;
         var _fileId = fileId;
@@ -409,7 +421,7 @@
             _ps['$']["combine"] = combine;
         if(description)
             _ps['$']["description"] = description;
-        
+
         this.getBaseFile = function(){
             return _basefile;
         };
@@ -423,7 +435,6 @@
         }
 
         function getPolicyById(policySet, policyId) {
-            //TODO: if the attribute id of the policy/policy-set is not defined, the function will crash
             //console.log('getPolicyById - policySet is '+JSON.stringify(policySet));
             /*
             if(policyId == null || (policySet['$']['id'] && policySet['$']['id'] == policyId)) {
@@ -452,9 +463,8 @@
         };
 
         function getPolicySetById(policySet, policyId) {
-            //TODO: if the attribute id of the policy/policy-set is not defined, the function will crash
             //console.log('getPolicyById - policySet is '+JSON.stringify(policySet));
-            
+
             if(policySet['policy-set']) {
                 for(var j in policySet['policy-set']) {
                     if(policySet['policy-set'][j]['$']['id'] == policyId) {
@@ -469,6 +479,144 @@
             return null;
         };
 
+        function getPolicySetBySubject(policySet, subject) {
+            var res = {'generic':[], 'matched':[]};
+            if(policySet['policy-set']) {
+                for(var j in policySet['policy-set']) {
+                    var checkRes = checkPolicySetSubject(policySet['policy-set'][j] , subject);
+                    if (checkRes == 0){
+                        res['generic'].push(new policyset(policySet['policy-set'][j], "policy-set"));
+                    } else if (checkRes == 1){
+                        res['matched'].push(new policyset(policySet['policy-set'][j], "policy-set"));
+                    }
+                    if (policySet['policy-set'][j]['policy-set']){
+                        var tmpRes = getPolicySetBySubject(policySet['policy-set'][j], subject);
+                        for (var e in tmpRes){
+                            if (res[e] && tmpRes[e].length > 0){
+                                res[e] = res[e].concat(tmpRes[e]);
+                            }
+                        }
+                    }
+                }
+            }
+            return res;
+        }
+
+        function checkPolicySetSubject(policySet, subject) {
+            psSubject = null;
+            var tempSubject = JSON.parse(JSON.stringify(subject));
+            try{
+                psSubject = policySet['target'][0]['subject'];
+            }
+            catch(err) {
+                return 0; //subject not specified (it's still a subject match)
+            }
+            if (psSubject){
+                for (var i in psSubject) {
+                    temp = null;
+                    try {
+                        temp = psSubject[i]['subject-match'][0]['$']['match'];
+                    } catch (err) { continue; }
+
+                    // Change the string of psSubjectMatch_i to array psSubjectMatch_i.
+                    var psSubjectMatch_i = temp.split(',');
+
+
+                    if(psSubjectMatch_i.length > 1) {
+                        for(var j in psSubjectMatch_i) {
+                            // psSubjectMatch_i_j = null;
+                            try {
+                                var psSubjectMatch_i_j = psSubjectMatch_i[j];
+                            } catch(err) { continue; }
+
+                            var index = tempSubject.indexOf(psSubjectMatch_i_j);
+                            if (index > -1){
+                                //numMatchedSubjects++;
+                                tempSubject.splice(index,1);
+                            }
+                        }
+                    } else {
+                        var index = tempSubject.indexOf(psSubjectMatch_i[0]);
+                        if (index > -1) {
+                            tempSubject.splice(index,1);
+                        }
+                    }
+                }
+                if (tempSubject.length == 0){
+                    return 1; //subject matches
+                }
+            }
+            return -1; //subject doesn't match
+        }
+
+        function getPolicyBySubject(policySet, subject) {
+            var res = {'generic':[], 'matched':[]};
+            // if(policySet['policy'] && checkPolicySetSubject(policySet, subject) > -1) {
+            if(policySet['policy']) {
+                for(var j in policySet['policy']) {
+                    var tempSubject = JSON.parse(JSON.stringify(subject));
+                    pSubject = null;
+                    try{
+                        pSubject = policySet['policy'][j]['target'][0]['subject'];
+                    }
+                    catch(err) {
+                        res['generic'].push(new policy(policySet['policy'][j]));
+                    }
+                    if (pSubject){
+                        // var numMatchedSubjects = 0;
+                        for (var i in pSubject) {
+                            temp = null;
+                            // pSubjectMatch_i = null;
+                            try {
+                                // pSubjectMatch_i = pSubject[i]['subject-match'][0]['$']['match'];
+                                temp = pSubject[i]['subject-match'][0]['$']['match'];
+                            } catch (err) { continue; }
+
+                            var pSubjectMatch_i = temp.split(',');
+                            if (pSubjectMatch_i.length > 1) {
+
+                                for (var m in pSubjectMatch_i) {
+                                    // pSubjectMatch_i_j = null;
+                                    try {
+                                        var pSubjectMatch_i_j = pSubjectMatch_i[m];
+                                    } catch(err) { continue; }
+
+                                    var index = tempSubject.indexOf(pSubjectMatch_i_j);
+                                    if (index > -1){
+                                        // numMatchedSubjects++;
+                                        tempSubject.splice(index,1);
+                                    }
+                                }
+
+                            } else {
+                                var index = tempSubject.indexOf(pSubjectMatch_i[0]);
+                                if (index > -1){
+                                    // numMatchedSubjects++;
+                                    tempSubject.splice(index,1);
+                                }
+                            }
+                            if (tempSubject.length == 0) {
+                                res['matched'].push(new policy(policySet['policy'][j]));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            /*if(policySet['policy-set']) {
+                for(var j in policySet['policy-set']) {
+                    var tmpRes = getPolicyBySubject(policySet['policy-set'][j], subject);
+                    for (var e in tmpRes){
+                        if (res[e] && tmpRes[e].length > 0){
+                            res[e] = res[e].concat(tmpRes[e]);
+                        }
+                    }
+                }
+            }*/
+            return res;
+        }
+
         this.removeSubject = function(subjectId, policyId) {
             if(!_ps) {
                 return null;
@@ -479,7 +627,7 @@
 
             //var policy = (policyId) ? getPolicyById(_ps, policyId) : _ps;
             var policy = _ps;
-            
+
             //console.log(policy);
 
             if(policy.target[0]["subject"]){
@@ -507,9 +655,9 @@
                         policySet['policy-set'].splice(j, 1);
                         return true;
                     }
-                    if(removePolicyById(policySet['policy-set'][j], policyId)) {
+                    /*if(removePolicyById(policySet['policy-set'][j], policyId)) {
                         return true;
-                    }
+                    }*/
                 }
             }
             return false;
@@ -521,10 +669,11 @@
                 for(var j in policySet['policy']) {
                     if(policySet['policy'][j]['$']['id'] == policyId) {
                         policySet['policy'].splice(j, 1);
-                        return true; 
+                        return true;
                     }
                 }
             }
+            /*
             if(policySet['policy-set']) {
                 for(var j in policySet['policy-set']) {
                     if(policySet['policy-set'][j]['$']['id'] == policyId) {
@@ -535,7 +684,7 @@
                         return true;
                     }
                 }
-            }
+            }*/
             return false;
         }
 
@@ -548,8 +697,8 @@
             return new policy(null, policyId, combine, description);
         };
 
-        //this.createPolicySet = function(policySetId, combine, description){
-       function createPolicySet(policySetId, combine, description){
+        this.createPolicySet = function(policySetId, combine, description){
+       //function createPolicySet(policySetId, combine, description){
             return new policyset(null, policySetId, _basefile, _fileId, policySetId, combine, description);
         };
 
@@ -557,9 +706,9 @@
       this.addPolicy = function(newPolicy, newPolicyPosition){
 //      this.addPolicy = function(policyId, combine, description, newPolicyPosition, succCB){
 //      var newPolicy = createPolicy(policyId, combine, description);
-            if(!_ps) 
+            if(!_ps)
                 return null;
-            
+
             if(!_ps["policy"])
                 _ps["policy"] = new Array();
             else{
@@ -574,15 +723,32 @@
             var position = (newPolicyPosition == undefined || newPolicyPosition<0 || _ps["policy"].length == 0) ? _ps["policy"].length : newPolicyPosition;
             _ps['policy'].splice(position, 0, newPolicy.getInternalPolicy());
             //succCB(newPolicy);
-            
+
         };
 
-        //this.addPolicySet = function(newPolicySet, newPolicySetPosition){
-        this.addPolicySet = function(policySetId, combine, description, newPolicySetPosition){
-            var newPolicySet = createPolicySet(policySetId, combine, description);
-            if(!_ps) 
+        this.addPolicySet = function(newPolicySet, newPolicySetPosition){
+        //this.addPolicySet = function(policySetId, combine, description, newPolicySetPosition){
+            //var newPolicySet = createPolicySet(policySetId, combine, description);
+            if(!_ps)
                 return null;
-            
+
+            if(!_ps['policy-set'])
+                _ps['policy-set'] = new Array();
+            else{
+                for(var i =0; i<_ps['policy-set'].length; i++){
+                    console.log(JSON.stringify(newPolicySet.getInternalPolicySet()));
+                    if(_ps['policy-set'][i]['$']['id'] == newPolicySet.getInternalPolicySet()['$']['id']){
+                        console.log("A policyset with " + newPolicySet.getInternalPolicySet()['$']['id'] + " is already present");
+                        return;
+                    }
+                }
+            }
+            var position = (newPolicySetPosition == undefined || newPolicySetPosition<0 || _ps['policy-set'].length == 0) ? _ps['policy-set'].length : newPolicySetPosition;
+            _ps['policy-set'].splice(position, 0, newPolicySet.getInternalPolicySet());
+            /*
+            if(!_ps)
+                return null;
+
             if(!_ps["policy-set"])
                 _ps["policy-set"] = new Array();
 
@@ -590,9 +756,10 @@
 //            var position = (!newPolicySetPosition || _ps["policy-set"].length == 0) ? 0 : newPolicySetPosition;
 
             _ps['policy-set'].splice(position, 0, newPolicySet.getInternalPolicySet());
+            */
         };
 
-        
+
 
         // add subject to policyset
         this.addSubject = function(newSubjectId, matches){
@@ -606,10 +773,10 @@
             if(policy == null) {
                 return null;
             }
-           
+
             var id = (newSubjectId) ? newSubjectId : new Date().getTime(); //Ecco perchè inserendo ID vuoto metto la data
             var newsubj = {"$" : {"id" : id} , "subject-match" : [] };
-        
+
             for(var i in matches){
                 if(i == "subject-match")
                     newsubj["subject-match"].push(matches[i]);
@@ -619,43 +786,56 @@
 
             if(!policy.target[0]["subject"])
                 policy.target[0]["subject"] = [];
-                
+
             //console.log(JSON.stringify(policy.target[0]));
             for(var i =0; i<policy.target[0]["subject"].length; i++){
                     if(policy.target[0]["subject"][i]['$']["id"] == newSubjectId){
                         console.log("A subject with " + newSubjectId + " is already present");
                         return;
                     }
-                }    
+                }
             policy.target[0]["subject"].push(newsubj);
             //console.log(JSON.stringify(policy.target[0]));
 
         };
 
-        //this.getPolicy = function(policyId, succCB, errCB){
         this.getPolicy = function(policyId){
-            //console.log(_ps);
-            if(policyId){
-                var tmp = getPolicyById(_ps, policyId);
-                if(tmp){
-                    return new policy(tmp);
-                    //succCB(new policy(tmp));
-                    return;
+            if (policyId){
+                if(typeof policyId == "object" && policyId.length){
+                    var res = getPolicyBySubject(_ps, policyId);
+                    var tempSubject = replaceId(policyId);
+                    // Because of the default copying action, the tempSubject can never be zero.
+                    if ((tempSubject.indexOf("http://webinos.org/subject/id/PZ-Owner") != -1) || (tempSubject.indexOf("http://webinos.org/subject/id/known") != -1 )) {
+                        var res2 = getPolicyBySubject(_ps, tempSubject);
+                        var res = joinResult(res, res2);
+                    }
+                    return res;
+                } else {
+                    var tmp = getPolicyById(_ps, policyId);
+                    if(tmp){
+                        return new policy(tmp);
+                    }
                 }
             }
-            //errCB();
         };
 
-        //this.getPolicySet = function(policySetId, succCB, errCB){
         this.getPolicySet = function(policySetId){
             if(policySetId){
-                var tmp = getPolicySetById(_ps, policySetId);
-                if(tmp){
-                    return new policyset(tmp, "policy-set", _basefile, _fileId);
-                    //succCB(new policyset(tmp, "policy-set", _basefile, _fileId));
+                if(typeof policySetId == "object" && policySetId.length){
+                    var res = getPolicySetBySubject(_ps, policySetId);
+                    var tempSubject = replaceId(policySetId);
+                    if ((tempSubject.indexOf("http://webinos.org/subject/id/PZ-Owner") != -1) || (tempSubject.indexOf("http://webinos.org/subject/id/known") !=-1 )) {
+                        var res2 = getPolicySetBySubject(_ps, tempSubject);
+                        var res = joinResult(res, res2);
+                    }
+                    return res;
+                } else {
+                    var tmp = getPolicySetById(_ps, policySetId);
+                    if(tmp){
+                        return new policyset(tmp, "policy-set", _basefile, _fileId);
+                    }
                 }
             }
-            //errCB();
         };
 
 /*
@@ -674,8 +854,8 @@
             return subjects;
         };
 */
-
-        this.updateSubject = function(subjectId, matches/*, policyId*/ ){
+        this.updateSubject = function(subjectId, matches){
+        //this.updateSubject = function(subjectId, matches/*, policyId*/ ){
             if(!_ps) {
                 return null;
             }
@@ -686,7 +866,7 @@
             if(policy == null) {
                 return null;
             }
-            
+
             if(policy.target && policy.target[0] && policy.target[0]["subject"]){
                 var subjects = policy.target[0]["subject"];
                 for(var i in subjects){
@@ -704,7 +884,13 @@
             if(policyId == null) {
                 return;
             }
+            if (!_ps['policy']) {
+                return null;
+            }
             removePolicyById(_ps, policyId);
+            if (_ps['policy'].length == 0) {
+                _ps['policy'] = undefined;
+            }
         };
 
         this.removePolicySet = function(policySetId){
@@ -714,10 +900,17 @@
             if(policySetId == null) {
                 return;
             }
+            if (!_ps['policy-set']) {
+                return null;
+            }
             removePolicySetById(_ps, policySetId);
+            console.log(_ps['policy-set']);
+            if (_ps['policy-set'].length == 0) {
+                _ps['policy-set'] = undefined;
+            }
         };
 
-        
+
 
         this.removeSubject = function(subjectId) {
             if(!_ps) {
@@ -730,7 +923,7 @@
 
             //var policy = (policyId) ? getPolicyById(_ps, policyId) : _ps;
             var policy = _ps;
-            
+
             //console.log(policy);
 
             var count = 0;
@@ -748,15 +941,15 @@
                 if(index != -1){
                     console.log("remove "+index);
                     policy.target[0]["subject"].splice(index,1);
+                    if(count == 1)
+                        policy.target = undefined;
                 }
-                if(count == 1)
-                    //policy.target = [];
-                    policy.target = undefined;
+
             }
             //console.log("AFTER : " + JSON.stringify(policy["rule"]));
         };
 
-        this.updateAttributes = function(key, value){
+        this.updateAttribute = function(key, value){
           if(key == "combine" || key == "description"){
             _ps['$'][key] = value;
           }
@@ -768,10 +961,10 @@
                 _ps['$']["combine"] = combine;
             if(description)
                 _ps['$']["description"] = description;};*/
-        
 
-        this.toJSONString = function(){
-            return JSON.stringify(_ps);
+
+        this.toJSONObject = function(){
+            return _ps;
             //return "ID : " + _id + ", DESCRIPTION : " + _ps.$.description + ", PATH : " + _basefile;
         }
     }
@@ -797,12 +990,12 @@
             );
         }
         else {
-            success(new policyset(policyFiles[policyset_id].content, "policy-set", policyset_id));              
+            success(new policyset(policyFiles[policyset_id].content, "policy-set", policyset_id));
         }
     };
 
     function save(policyset, successCB, errorCB) {
-        var rpc = webinos.rpcHandler.createRPC(this, "setPolicy", [policyset.getBaseFile(), policyset.toJSONString()]);
+        var rpc = webinos.rpcHandler.createRPC(this, "setPolicy", [policyset.getBaseFile(), JSON.stringify(policyset.toJSONObject())]);
         webinos.rpcHandler.executeRPC(rpc
             , function (params) {
                 successCB(params);
@@ -813,4 +1006,112 @@
         );
     };
 
+    function testPolicy(policyset, request, successCB, errorCB) {
+        var rpc = webinos.rpcHandler.createRPC(this, "testPolicy", [policyset.getBaseFile(), JSON.stringify(request)]);
+        webinos.rpcHandler.executeRPC(rpc
+            , function (params) {
+                successCB(params);
+            }
+            , function (error) {
+                errorCB(error);
+            }
+        );
+    };
+    function testNewPolicy(policyset, request, successCB, errorCB) {
+        var rpc = webinos.rpcHandler.createRPC(this, "testNewPolicy", [JSON.stringify(policyset.toJSONObject()), JSON.stringify(request)]);
+        webinos.rpcHandler.executeRPC(rpc
+            , function (params) {
+                successCB(params);
+            }
+            , function (error) {
+                errorCB(error);
+            }
+        );
+    };
+
+// Start point..............
+// This function is used to test if the userId belongs to the friends array.
+    function userBelongsToFriend(userId) {
+        if (userId !== webinos.session.getPZHId()) {
+            var friends = webinos.session.getConnectedPzh();
+            var index = friends.indexOf(userId);
+            if (index > -1){
+                return 1;
+            }
+        }
+        return 0;
+    }
+// This function is used to replace the elements (ids) in the subject, and to  make it simple, only two possible values, one is the generic URI of zone owner, and another is the friends. Then return the changed subject (tempSubject).
+    function replaceId(subject) {
+        var friendFound = false;
+        var tempSubject = [];
+
+        var zoneOwner = webinos.session.getPZHId();
+        if (!zoneOwner) {
+            zoneOwner = webinos.session.getPZPId();
+        }
+
+        for (var j in subject) {
+            if (subject[j] === zoneOwner) {
+                tempSubject.push("http://webinos.org/subject/id/PZ-Owner");
+            } else if (userBelongsToFriend(subject[j])) {
+                if (friendFound == false) {
+                    tempSubject.push("http://webinos.org/subject/id/known");
+                    friendFound = true;
+                }
+            // do nothing if friendFound is true
+            } else {
+                // default behaviour, copy item
+                tempSubject.push(subject[j]);
+            }
+        }
+        return tempSubject;
+    }
+
+    function deepCopy(p,c) {
+        var c = c || {};
+        for (var i in p) {
+            if (typeof p[i] === 'object') {
+                c[i] = (p[i].constructor === Array) ? [] : {};
+                deepCopy(p[i], c[i]);
+            }
+            else {
+                c[i] = p[i];
+            }
+        }
+        return c;
+    }
+
+// This function used to join two results together, res2 only can have two elements at most, one in the generic set and one in the matched set. So ckecked them one by one is the easiest solution. To avoid duplication, in both if functions, also check if the element in the res2 already presented in the res1, if already presented, skip this step, other wise push the element in res1, and return res1.
+    function joinResult(res1, res2) {
+        var found_g = false, found_m = false;
+        var res = deepCopy(res1);
+        for (var i in res2['generic']) {
+            for (var j in res1['generic']) {
+                if (res1['generic'][j].toJSONObject() === res2['generic'][i].toJSONObject() ) {
+                    found_g = true;
+                    break;
+                }
+            }
+            if (found_g == false) {
+                res['generic'].push(res2['generic'][i]);
+            }
+            found_g = false;
+        }
+
+        for (var m in res2['matched']) {
+            for (var n in res1['matched']) {
+                if (res1['matched'][n].toJSONObject() === res2['matched'][m].toJSONObject() ) {
+                    found_m = true;
+                    break;
+                }
+            }
+            if (found_m == false) {
+                res['matched'].push(res2['matched'][m]);
+            }
+            found_m = false;
+        }
+
+        return res;
+    }
 })();
