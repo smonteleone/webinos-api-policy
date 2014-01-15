@@ -553,19 +553,23 @@ function fillOptionsFromArray(dropdown, optionsData) {
 //-----------------------------------------------LOAD DATA
 
 
-function loadData(uri) {
-    var apiURI;
+function loadData(uri, sid) {
+    var apiURI = '*';
+    var serviceId = null;
     if(uri) {
         apiURI = uri;
+    }
+    if(sid) {
+        serviceId = sid;
+    }
+    if(uri || sid) {
         $("#tabTo-peoplePolicies").hide();
         $("#tabTo-servicesPolicies").click();
         //$("#peoplePolicies").hide();
         //$("#tabTo-servicesPolicies").addClass("selected");
         //$("#servicesPolicies").show();
-    } else {
-        apiURI = "*";
     }
-    console.log("apiURI: " + apiURI);
+    //console.log("apiURI: " + apiURI);
     webinos.session.getConnectedDevices().map( function(elem) {
         appData.people[elem.id] = {
             id: elem.id,
@@ -576,24 +580,34 @@ function loadData(uri) {
 
     webinos.discovery.findServices(new ServiceType(apiURI), {
         onFound: function (service) {
+            if(service.serviceAddress.indexOf(webinos.session.getPZPId()) == -1)
+                return;
+            if(sid) {
+                if(service.id.indexOf(sid) == -1) {
+                    return;
+                }
+            }
             appData.services[service.id] = {
                 id: service.id,
                 name: service.displayName,
                 desc: service.description
             };
 
-            appData.services[service.api] = {
-                id: service.api,
-                name: service.displayName,
-                desc: 'Generic Service'
-            };
-            
+            if(!sid) {
+                var name = service.api.split('/');
+                appData.services[service.api] = {
+                    id: service.api,
+                    name: name[name.length-1]+' Api',
+                    desc: 'Generic API'
+                };
+            }
+
             if (timeout) {
                 clearTimeout(timeout);
             }
-            timeout = setTimeout(function () { 
+            timeout = setTimeout(function () {
                     console.log("fillTabs");
-                    fillPeopleTab(); 
+                    fillPeopleTab();
                     fillServicesTab();
                 } , 250);
         }
@@ -656,7 +670,15 @@ function updatePermission(id, permission) {
 function dashboardConfig() {
     webinos.dashboard.getData(
             function(tokenData){
-                loadData(tokenData.apiURI);
+                var apiURI = null;
+                var serviceId = null;
+                if(tokenData.apiURI) {
+                    apiURI = tokenData.apiURI;
+                }
+                if(tokenData.serviceId) {
+                    serviceId = tokenData.serviceId;
+                }
+                loadData(apiURI, serviceId);
             },
             function(){
                 loadData();
@@ -776,6 +798,8 @@ var getPolicy_ServicesForPeople = function() {
 
                         webinos.discovery.findServices(new ServiceType("*"), {
                             onFound: function (resource) {
+                            if(resource.serviceAddress.indexOf(webinos.session.getPZPId()) == -1)
+                                return;
                                 var serviceRequest = {};
                                 serviceRequest.subjectInfo = {};
                                 serviceRequest.subjectInfo.userId = userId;
